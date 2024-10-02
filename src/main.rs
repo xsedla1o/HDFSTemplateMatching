@@ -1,8 +1,7 @@
 use chrono::{NaiveDateTime, TimeZone, Utc};
-use core::panic;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, BufWriter, Write};
 use std::path::Path;
 
 fn main() {
@@ -17,7 +16,6 @@ fn main() {
                 .split("<*>")
                 .map(|part| part.to_string())
                 .collect();
-            // println!("{:?}", parts);
             parts
         })
         .collect();
@@ -35,7 +33,10 @@ fn main() {
         }
     }
 
-    println!("id;event_type;seq_id;time;label");
+    let mut w = BufWriter::new(File::create("parsed_rust.csv").unwrap());
+
+    w.write_all(b"id;event_type;seq_id;time;label\n").unwrap();
+
     if let Ok(lines) = read_lines("./sorted.log") {
         let mut prev_timestamp = Utc::now().timestamp();
 
@@ -93,16 +94,9 @@ fn main() {
                 }
             }
 
-            //time_string = line[:13] # timestamp format in logs: 081111 111607
-            // if time_string == "du: cannot ac": # last few lines in log file do not have a time stamp
-            //      timestamp = prev_timestamp # assume that the lines without timestamp occur at the same time as the logs before
-            // else:
-            //      timestamp = datetime.datetime(year=int('20' + time_string[:2]), month=int(time_string[2:4]), day=int(time_string[4:6]), hour=int(time_string[7:9]), minute=int(time_string[9:11]), second=int(time_string[11:13])).replace(tzinfo=timezone.utc).timestamp()
-            //      prev_timestamp = timestamp
-
             let time_string = &line[..13]; // timestamp format in logs: 081111 111607
 
-            let timestamp = if time_string == "du: cannot ac" {
+            let timestamp = if time_string.starts_with("du") {
                 // last few lines in log file do not have a timestamp
                 prev_timestamp // assume that the lines without timestamp occur at the same time as the logs before
             } else {
@@ -122,37 +116,25 @@ fn main() {
                 datetime
             };
 
-            if let Some(label) = labels.get(blk_id.unwrap()) {
-                println!(
-                    "{};{};{};{:.1};{}",
-                    line_id,
-                    template_id,
-                    blk_id.unwrap(),
-                    timestamp as f64,
-                    label
-                );
-            } else {
-                panic!(
-                    "Label not found for blk_id: {}, line_id: {}, template_id: {}",
-                    blk_id.unwrap(),
-                    line_id,
-                    template_id
-                );
-            }
+            let blk_id = blk_id.expect("Block ID not found");
+            let label = labels.get(blk_id).expect("Label not found");
+
+            let out_line = format!(
+                "{};{};{};{:.1};{}\n",
+                line_id, template_id, blk_id, timestamp as f64, label
+            );
+            w.write_all(out_line.as_bytes()).unwrap();
+
             for extra_blk_id in extra_blk_ids.iter() {
-                if let Some(label) = labels.get::<str>(extra_blk_id) {
-                    println!(
-                        "{};{};{};{:.1};{}",
-                        line_id, template_id, extra_blk_id, timestamp as f64, label
-                    );
-                } else {
-                    panic!(
-                        "Label not found for extra_blk_id: {}, line_id: {}, template_id: {}",
-                        extra_blk_id, line_id, template_id
-                    );
-                }
+                let label = labels.get::<str>(extra_blk_id).expect("Label not found");
+                let out_line = format!(
+                    "{};{};{};{:.1};{}\n",
+                    line_id, template_id, extra_blk_id, timestamp as f64, label
+                );
+                w.write_all(out_line.as_bytes()).unwrap();
             }
         }
+        w.flush().unwrap();
     }
 }
 
