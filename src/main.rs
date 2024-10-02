@@ -19,6 +19,11 @@ fn main() {
             parts
         })
         .collect();
+    let mut templates_by_freq: Vec<(usize, &Vec<String>, u64)> = templates
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (i, t, 0))
+        .collect();
 
     let mut labels: HashMap<String, String> = HashMap::new();
     let mut lines = read_lines("labels.csv").unwrap();
@@ -33,6 +38,8 @@ fn main() {
         }
     }
 
+    let mut sort_treshold = 100000;
+
     let mut w = BufWriter::new(File::create("parsed_rust.csv").unwrap());
 
     w.write_all(b"id;event_type;seq_id;time;label\n").unwrap();
@@ -46,10 +53,15 @@ fn main() {
             let mut template_id = 0;
             positions.clear();
 
-            for (t_i, template) in templates.iter().enumerate() {
+            if line_id == sort_treshold {
+                templates_by_freq.sort_by(|a, b| b.2.cmp(&a.2));
+                sort_treshold *= 4;
+            }
+
+            for (real_i, (t_i, template, _f)) in templates_by_freq.iter().enumerate() {
                 let mut current_pos = 0;
                 let mut found = true;
-                for part in template {
+                for part in *template {
                     match line.as_str()[current_pos..].find::<&str>(part) {
                         Some(pos) => {
                             current_pos += pos;
@@ -66,6 +78,7 @@ fn main() {
                 }
                 if found {
                     template_id = t_i + 1;
+                    templates_by_freq[real_i].2 += 1;
                     break;
                 }
             }
