@@ -41,7 +41,6 @@ fn main() {
         let mut prev_timestamp = 0;
         let mut positions = Vec::with_capacity(10);
 
-        // Consumes the iterator, returns an (Optional) String
         for (line_i, line) in lines.map_while(Result::ok).enumerate() {
             let line_id = line_i + 1;
             let mut template_id = 0;
