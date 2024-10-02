@@ -38,14 +38,15 @@ fn main() {
     w.write_all(b"id;event_type;seq_id;time;label\n").unwrap();
 
     if let Ok(lines) = read_lines("./sorted.log") {
-        let mut prev_timestamp = Utc::now().timestamp();
+        let mut prev_timestamp = 0;
+        let mut positions = Vec::with_capacity(10);
 
         // Consumes the iterator, returns an (Optional) String
         for (line_i, line) in lines.map_while(Result::ok).enumerate() {
-            // println!("{}", line);
             let line_id = line_i + 1;
             let mut template_id = 0;
-            let mut positions = vec![];
+            positions.clear();
+
             for (t_i, template) in templates.iter().enumerate() {
                 let mut current_pos = 0;
                 let mut found = true;
@@ -65,7 +66,6 @@ fn main() {
                     }
                 }
                 if found {
-                    // println!("{:?}", positions);
                     template_id = t_i + 1;
                     break;
                 }
