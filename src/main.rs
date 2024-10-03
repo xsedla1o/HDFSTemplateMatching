@@ -7,11 +7,15 @@ use std::io::Error;
 use std::io::{self, BufRead, BufWriter, Write};
 use std::path::Path;
 
-fn seq_find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    seq_find_bytes_from(haystack, needle, 0)
+fn find_subarray<T: PartialEq>(haystack: &[T], needle: &[T]) -> Option<usize> {
+    find_subarray_from(haystack, needle, 0)
 }
 
-fn seq_find_bytes_from(haystack: &[u8], needle: &[u8], start_pos: usize) -> Option<usize> {
+fn find_subarray_from<T: PartialEq>(
+    haystack: &[T],
+    needle: &[T],
+    start_pos: usize,
+) -> Option<usize> {
     let mut i = start_pos;
     while i + needle.len() <= haystack.len() {
         let mut found = true;
@@ -133,7 +137,7 @@ fn main() -> Result<(), Error> {
                 let mut current_pos = 0;
                 let mut found = true;
                 for part in *template {
-                    match seq_find_bytes_from(&line, part, current_pos) {
+                    match find_subarray_from(&line, part, current_pos) {
                         Some(pos) => {
                             current_pos = pos;
                             positions.push(current_pos);
@@ -178,7 +182,7 @@ fn main() -> Result<(), Error> {
                     .zip((1..positions.len()).step_by(2))
                 {
                     let param: &[u8] = &line[positions[i]..positions[j]];
-                    if let Some(p) = seq_find_bytes(param, b"blk_") {
+                    if let Some(p) = find_subarray(param, b"blk_") {
                         blk_id = Some(
                             param[p..]
                                 .split(|c: &u8| blk_end_patterns.contains(c))
