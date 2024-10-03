@@ -64,7 +64,7 @@ fn write_output(
     let out_line = format!("{};{};", line_id, template_id);
     w.write_all(out_line.as_bytes())?;
     w.write_all(blk_id)?;
-    let out_line = format!(";{:.1};", timestamp as f64);
+    let out_line = format!(";{}.0;", timestamp);
     w.write_all(out_line.as_bytes())?;
     w.write_all(decode_label(label))?;
     w.write_all(b"\n")?;
