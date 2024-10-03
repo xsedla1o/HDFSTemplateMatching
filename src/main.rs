@@ -3,6 +3,7 @@ use chrono::NaiveDate;
 use core::str;
 use std::collections::HashMap;
 use std::fs::File;
+use std::io::Error;
 use std::io::{self, BufRead, BufWriter, Write};
 use std::path::Path;
 
@@ -55,17 +56,18 @@ fn write_output(
     blk_id: &[u8],
     timestamp: i64,
     label: &u8,
-) {
+) -> Result<(), Error> {
     let out_line = format!("{};{};", line_id, template_id);
-    w.write_all(out_line.as_bytes()).unwrap();
-    w.write_all(blk_id).unwrap();
+    w.write_all(out_line.as_bytes())?;
+    w.write_all(blk_id)?;
     let out_line = format!(";{:.1};", timestamp as f64);
-    w.write_all(out_line.as_bytes()).unwrap();
-    w.write_all(decode_label(label)).unwrap();
-    w.write_all(b"\n").unwrap();
+    w.write_all(out_line.as_bytes())?;
+    w.write_all(decode_label(label))?;
+    w.write_all(b"\n")?;
+    Ok(())
 }
 
-fn main() {
+fn main() -> Result<(), Error> {
     // Read templates
     let templates: Vec<Vec<Vec<u8>>> = read_lines("./templates.csv")
         .unwrap()
@@ -92,7 +94,7 @@ fn main() {
 
     // Read labels
     let mut labels: HashMap<i64, u8> = HashMap::new();
-    let mut lines = read_lines("labels.csv").unwrap();
+    let mut lines = read_lines("labels.csv")?;
     lines.next(); // skip the header
 
     for line in lines.map_while(Result::ok) {
@@ -110,8 +112,8 @@ fn main() {
 
     let mut sort_treshold = 100000;
 
-    let mut w = BufWriter::new(File::create("parsed_rust.csv").unwrap());
-    w.write_all(b"id;event_type;seq_id;time;label\n").unwrap();
+    let mut w = BufWriter::new(File::create("parsed_rust.csv")?);
+    w.write_all(b"id;event_type;seq_id;time;label\n")?;
 
     if let Ok(lines) = read_lines("./sorted.log") {
         let mut prev_timestamp = 0;
@@ -213,18 +215,19 @@ fn main() {
             let blk_id_num = blk_to_i(blk_id);
             let label = labels.get(&blk_id_num).expect("Label not found");
 
-            write_output(&mut w, line_id, template_id, blk_id, timestamp, label);
+            write_output(&mut w, line_id, template_id, blk_id, timestamp, label)?;
 
             for extra_blk_id in extra_blk_ids.iter() {
                 let blk_id_num = blk_to_i(extra_blk_id);
                 let label = labels.get(&blk_id_num).expect("Label not found");
 
-                write_output(&mut w, line_id, template_id, extra_blk_id, timestamp, label);
+                write_output(&mut w, line_id, template_id, extra_blk_id, timestamp, label)?;
             }
         }
 
-        w.flush().unwrap();
+        w.flush()?;
     }
+    Ok(())
 }
 
 // The output is wrapped in a Result to allow matching on errors.
