@@ -48,7 +48,25 @@ fn decode_label(label: &u8) -> &'static [u8] {
     }
 }
 
+fn write_output(
+    w: &mut BufWriter<File>,
+    line_id: usize,
+    template_id: usize,
+    blk_id: &[u8],
+    timestamp: i64,
+    label: &u8,
+) {
+    let out_line = format!("{};{};", line_id, template_id);
+    w.write_all(out_line.as_bytes()).unwrap();
+    w.write_all(blk_id).unwrap();
+    let out_line = format!(";{:.1};", timestamp as f64);
+    w.write_all(out_line.as_bytes()).unwrap();
+    w.write_all(decode_label(label)).unwrap();
+    w.write_all(b"\n").unwrap();
+}
+
 fn main() {
+    // Read templates
     let templates: Vec<Vec<Vec<u8>>> = read_lines("./templates.csv")
         .unwrap()
         .map_while(Result::ok)
@@ -64,12 +82,15 @@ fn main() {
             parts
         })
         .collect();
+
+    // Add frequency counter to templates for heuristic sorting
     let mut templates_by_freq: Vec<(usize, &Vec<Vec<u8>>, u64)> = templates
         .iter()
         .enumerate()
         .map(|(i, t)| (i, t, 0))
         .collect();
 
+    // Read labels
     let mut labels: HashMap<i64, u8> = HashMap::new();
     let mut lines = read_lines("labels.csv").unwrap();
     lines.next(); // skip the header
@@ -90,7 +111,6 @@ fn main() {
     let mut sort_treshold = 100000;
 
     let mut w = BufWriter::new(File::create("parsed_rust.csv").unwrap());
-
     w.write_all(b"id;event_type;seq_id;time;label\n").unwrap();
 
     if let Ok(lines) = read_lines("./sorted.log") {
@@ -142,14 +162,13 @@ fn main() {
 
             let mut blk_id: Option<&[u8]> = None;
             let mut extra_blk_ids: Vec<&[u8]> = vec![];
+
             if template_id == 30 {
                 let mut ids = line[positions[4]..positions[5]]
                     .trim_ascii()
                     .split(|c: &u8| *c == b' ');
                 blk_id = Some(ids.next().unwrap());
-                for id in ids {
-                    extra_blk_ids.push(id);
-                }
+                extra_blk_ids = ids.collect();
             } else {
                 let blk_end_patterns: &[_] = b" .'";
                 for (i, j) in (0..positions.len())
@@ -160,7 +179,7 @@ fn main() {
                     if let Some(p) = seq_find_bytes(param, b"blk_") {
                         blk_id = Some(
                             param[p..]
-                                .split(|c: &u8| blk_end_patterns.iter().any(|p: &u8| c == p))
+                                .split(|c: &u8| blk_end_patterns.contains(c))
                                 .next()
                                 .unwrap(),
                         );
@@ -194,27 +213,16 @@ fn main() {
             let blk_id_num = blk_to_i(blk_id);
             let label = labels.get(&blk_id_num).expect("Label not found");
 
-            let out_line = format!("{};{};", line_id, template_id);
-            w.write_all(out_line.as_bytes()).unwrap();
-            w.write_all(blk_id).unwrap();
-            let out_line = format!(";{:.1};", timestamp as f64);
-            w.write_all(out_line.as_bytes()).unwrap();
-            w.write_all(decode_label(label)).unwrap();
-            w.write_all(b"\n").unwrap();
+            write_output(&mut w, line_id, template_id, blk_id, timestamp, label);
 
             for extra_blk_id in extra_blk_ids.iter() {
                 let blk_id_num = blk_to_i(extra_blk_id);
                 let label = labels.get(&blk_id_num).expect("Label not found");
 
-                let out_line = format!("{};{};", line_id, template_id);
-                w.write_all(out_line.as_bytes()).unwrap();
-                w.write_all(extra_blk_id).unwrap();
-                let out_line = format!(";{:.1};", timestamp as f64);
-                w.write_all(out_line.as_bytes()).unwrap();
-                w.write_all(decode_label(label)).unwrap();
-                w.write_all(b"\n").unwrap();
+                write_output(&mut w, line_id, template_id, extra_blk_id, timestamp, label);
             }
         }
+
         w.flush().unwrap();
     }
 }
