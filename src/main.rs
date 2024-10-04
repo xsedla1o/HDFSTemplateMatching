@@ -1,3 +1,4 @@
+use aho_corasick::{AhoCorasick, MatchKind};
 use atoi::FromRadix10;
 use chrono::NaiveDate;
 use core::str;
@@ -5,6 +6,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Error;
 use std::io::{self, BufRead, BufWriter, Write};
+use std::iter;
 use std::path::Path;
 
 fn find_subarray<T: PartialEq>(haystack: &[T], needle: &[T]) -> Option<usize> {
@@ -90,11 +92,27 @@ fn main() -> Result<(), Error> {
         .collect();
 
     // Add frequency counter to templates for heuristic sorting
-    let mut templates_by_freq: Vec<(usize, &Vec<Vec<u8>>, u64)> = templates
-        .iter()
-        .enumerate()
-        .map(|(i, t)| (i, t, 0))
-        .collect();
+    let mut template_freqs: Vec<u64> = vec![0; templates.len()];
+
+    // Create Aho-Corasick automaton for the first part of each template
+    let patterns: Vec<&[u8]> = templates.iter().map(|t| t[0].as_slice()).collect();
+    let mut unique_patterns = Vec::with_capacity(patterns.len());
+    // Vec of Vecs to store the IDs of the templates that have the same pattern
+    let mut unique_patterns_ids: Vec<Vec<usize>> = Vec::with_capacity(patterns.len());
+    for (i, pat) in patterns.iter().enumerate() {
+        let trimmed = pat.trim_ascii();
+        if !unique_patterns.contains(&trimmed) {
+            unique_patterns.push(trimmed);
+            unique_patterns_ids.push(vec![i]);
+        } else {
+            let id = unique_patterns.iter().position(|&p| p == trimmed).unwrap();
+            unique_patterns_ids[id].push(i);
+        }
+    }
+    let ac = AhoCorasick::builder()
+        .match_kind(MatchKind::LeftmostLongest)
+        .build(unique_patterns)
+        .unwrap();
 
     // Read labels
     let mut labels: HashMap<i64, u8> = HashMap::new();
@@ -121,22 +139,39 @@ fn main() -> Result<(), Error> {
 
     if let Ok(lines) = read_lines("./sorted.log") {
         let mut prev_timestamp = 0;
+
         let mut positions = Vec::with_capacity(10);
+        let mut tried = Vec::with_capacity(templates.len());
 
         for (line_i, line) in lines.map_while(Result::ok).enumerate() {
             let line_id = line_i + 1;
             let mut template_id = 0;
+
             positions.clear();
+            tried.clear();
 
             if line_id == sort_treshold {
-                templates_by_freq.sort_by(|a, b| b.2.cmp(&a.2));
+                for ids in unique_patterns_ids.iter_mut() {
+                    ids.sort_by(|a, b| template_freqs[*b].cmp(&template_freqs[*a]));
+                }
                 sort_treshold *= 4;
             }
 
-            for (real_i, (t_i, template, _f)) in templates_by_freq.iter().enumerate() {
-                let mut current_pos = 0;
+            for (t_i, res) in ac.find_iter(&line).flat_map(|res| {
+                unique_patterns_ids[res.pattern().as_usize()]
+                    .iter()
+                    .zip(iter::repeat(res))
+            }) {
+                // The same template can be found multiple times in the same line
+                if tried.contains(t_i) {
+                    continue;
+                }
+                positions.push(res.start());
+                positions.push(res.end());
+
+                let mut current_pos = res.end();
                 let mut found = true;
-                for part in *template {
+                for part in templates[*t_i].iter().skip(1) {
                     match find_subarray_from(&line, part, current_pos) {
                         Some(pos) => {
                             current_pos = pos;
@@ -146,6 +181,7 @@ fn main() -> Result<(), Error> {
                         }
                         None => {
                             positions.clear();
+                            tried.push(*t_i);
                             found = false;
                             break;
                         }
@@ -153,7 +189,7 @@ fn main() -> Result<(), Error> {
                 }
                 if found {
                     template_id = t_i + 1;
-                    templates_by_freq[real_i].2 += 1;
+                    template_freqs[*t_i] += 1;
                     break;
                 }
             }
